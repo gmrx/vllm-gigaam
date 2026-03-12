@@ -28,15 +28,26 @@ pip install -e .
 
 ### 2. Скачивание и подготовка модели
 
+Из корня репозитория `vllm-gigaam/` выполните:
+
 ```bash
-python scripts/prepare_model.py --output-dir ./gigaam-v3-e2e-rnnt
+python scripts/prepare_model.py
 ```
 
-Скрипт автоматически:
-- Скачает `ai-sage/GigaAM-v3` (ревизия e2e_rnnt) из HuggingFace
-- Сконвертирует `pytorch_model.bin` в `model.safetensors`
-- Создаст HuggingFace-совместимый токенизатор из SentencePiece-модели
-- Пропатчит `config.json`, добавив необходимые для vLLM поля (`architectures`, `hidden_size` и др.)
+По умолчанию модель сохраняется в `./gigaam-v3-e2e-rnnt`. Можно указать другой путь:
+
+```bash
+python scripts/prepare_model.py --output-dir /путь/к/модели
+```
+
+Скрипт выполнит 4 шага автоматически:
+
+1. **Скачивание** — загрузит `ai-sage/GigaAM-v3` (ревизия `e2e_rnnt`, ~430 МБ) из HuggingFace
+2. **Конвертация весов** — преобразует `pytorch_model.bin` → `model.safetensors`
+3. **Создание токенизатора** — сгенерирует HuggingFace-совместимый токенизатор из SentencePiece-модели
+4. **Патч конфига** — добавит в `config.json` обязательные для vLLM поля (`architectures`, `hidden_size` и др.)
+
+По завершении скрипт выведет готовую команду для запуска сервера.
 
 ### 3. Запуск сервера
 

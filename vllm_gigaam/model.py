@@ -63,49 +63,55 @@ def _get_gigaam(model_path: str, device: torch.device):
     return _gigaam_model
 
 
-# ── Транскрипция аудио с авто-чанкингом ──────────────────────────────
+# ── Транскрипция аудио с разрезкой по тишине (как Whisper в vLLM) ─────
 
-_CHUNK_SECONDS = 24   # Лимит GigaAM transcribe() — 25 с
-_OVERLAP_SECONDS = 1
+from vllm.multimodal.audio import split_audio
+
+_MAX_CHUNK_S = 24.0     # Лимит GigaAM transcribe() — 25 с
+_OVERLAP_S = 2.0        # Зона поиска тихого места для разреза
+_ENERGY_WINDOW = 1600   # Окно RMS-энергии (100 мс при 16 кГц)
+
+import re
+_CHUNK_EDGE_NOISE = re.compile(r"^[\s.…,;:!?\-—]+|[\s.…,;:!?\-—]+$")
+
+
+def _transcribe_chunk(gm, audio: np.ndarray, sr: int) -> str:
+    """Транскрибирует один чанк аудио через нативную модель GigaAM."""
+    import soundfile as sf
+    with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as f:
+        sf.write(f.name, audio, sr)
+        tmp = f.name
+    try:
+        with torch.no_grad():
+            return gm.transcribe(tmp)
+    finally:
+        os.unlink(tmp)
+
+
+def _clean_chunk(text: str) -> str:
+    """Убирает артефакты на стыках чанков (... и мусорные символы по краям)."""
+    return _CHUNK_EDGE_NOISE.sub("", text).strip()
 
 
 def _transcribe_audio(audio: np.ndarray, sr: int, model_path: str,
                       device: torch.device) -> str:
-    """Нативный инференс GigaAM с авто-нарезкой файлов длиннее 24 с."""
-    import soundfile as sf
-
+    """Нативный инференс GigaAM с разрезкой по тишине для длинных файлов."""
     sr = int(sr)
     gm = _get_gigaam(model_path, device)
-    max_samples = _CHUNK_SECONDS * sr
+    max_samples = int(sr * _MAX_CHUNK_S)
 
     if len(audio) <= max_samples:
-        with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as f:
-            sf.write(f.name, audio, sr)
-            tmp = f.name
-        try:
-            with torch.no_grad():
-                return gm.transcribe(tmp)
-        finally:
-            os.unlink(tmp)
+        return _transcribe_chunk(gm, audio, sr)
 
-    step = (_CHUNK_SECONDS - _OVERLAP_SECONDS) * sr
-    parts: list[str] = []
-    offset = 0
-    while offset < len(audio):
-        chunk = audio[offset: offset + max_samples]
-        with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as f:
-            sf.write(f.name, chunk, sr)
-            tmp = f.name
-        try:
-            with torch.no_grad():
-                text = gm.transcribe(tmp)
-            if text:
-                parts.append(text)
-        finally:
-            os.unlink(tmp)
-        offset += step
-
-    return " ".join(parts)
+    chunks = split_audio(
+        audio_data=audio,
+        sample_rate=sr,
+        max_clip_duration_s=_MAX_CHUNK_S,
+        overlap_duration_s=_OVERLAP_S,
+        min_energy_window_size=_ENERGY_WINDOW,
+    )
+    parts = [_clean_chunk(_transcribe_chunk(gm, chunk, sr)) for chunk in chunks]
+    return " ".join(p for p in parts if p)
 
 
 # ── Класс модели для vLLM ───────────────────────────────────────────
