@@ -18,7 +18,7 @@ from __future__ import annotations
 import os
 import tempfile
 from collections.abc import Iterable
-from typing import ClassVar, Literal, Mapping
+from typing import Any, ClassVar, Literal, Mapping
 
 import numpy as np
 import torch
@@ -220,14 +220,26 @@ class GigaAMForTranscription(
     @classmethod
     def get_generation_prompt(
         cls,
-        audio: np.ndarray,
-        stt_config: SpeechToTextConfig,
-        model_config: ModelConfig,
-        language: str | None,
-        task_type: Literal["transcribe", "translate"],
-        request_prompt: str,
-        to_language: str | None,
+        *args: Any,
+        **kwargs: Any,
     ) -> PromptType:
+        if len(args) == 1 and not kwargs:
+            stt_params = args[0]
+            audio = stt_params.audio
+            stt_config = stt_params.stt_config
+            model_config = stt_params.model_config
+        elif len(args) == 7 and not kwargs:
+            audio, stt_config, model_config, *_ = args
+        elif "stt_params" in kwargs and len(kwargs) == 1:
+            stt_params = kwargs["stt_params"]
+            audio = stt_params.audio
+            stt_config = stt_params.stt_config
+            model_config = stt_params.model_config
+        else:
+            audio = kwargs["audio"]
+            stt_config = kwargs["stt_config"]
+            model_config = kwargs["model_config"]
+
         model_path = model_config.model
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
