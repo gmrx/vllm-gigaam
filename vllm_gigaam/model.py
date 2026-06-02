@@ -55,7 +55,9 @@ def _get_gigaam(model_path: str, device: torch.device):
 
         logger.info("Загрузка нативной GigaAM-v3 из %s", model_path)
         _gigaam_model = AutoModel.from_pretrained(
-            model_path, trust_remote_code=True
+            model_path,
+            trust_remote_code=True,
+            low_cpu_mem_usage=False,
         )
         _gigaam_model = _gigaam_model.to(device).eval()
         _gigaam_device = device
